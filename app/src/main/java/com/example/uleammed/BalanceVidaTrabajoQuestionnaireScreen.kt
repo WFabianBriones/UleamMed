@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 // ViewModel
 class BalanceVidaTrabajoViewModel : ViewModel() {
     private val repository = AuthRepository()
+    private val tracker = QuestionnaireTracker(repository) // ✅ AGREGAR
 
     private val _state = MutableStateFlow<QuestionnaireState>(QuestionnaireState.Idle)
     val state: StateFlow<QuestionnaireState> = _state.asStateFlow()
@@ -76,6 +77,10 @@ class BalanceVidaTrabajoViewModel : ViewModel() {
 
             val result = repository.saveBalanceVidaTrabajoQuestionnaire(questionnaire)
             result.onSuccess {
+                // ✅ AGREGAR:
+                val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@onSuccess
+                tracker.onQuestionnaireCompleted(userId, QuestionnaireType.BALANCE_VIDA_TRABAJO)
+
                 _state.value = QuestionnaireState.Success
             }.onFailure { exception ->
                 _state.value = QuestionnaireState.Error("Error al guardar: ${exception.message}")

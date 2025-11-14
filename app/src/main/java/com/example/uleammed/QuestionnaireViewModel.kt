@@ -21,6 +21,7 @@ sealed class QuestionnaireState {
 
 class QuestionnaireViewModel : ViewModel() {
     private val repository = AuthRepository()
+    private val tracker = QuestionnaireTracker(repository) // ✅ AGREGAR
 
     private val _state = MutableStateFlow<QuestionnaireState>(QuestionnaireState.Idle)
     val state: StateFlow<QuestionnaireState> = _state.asStateFlow()
@@ -142,6 +143,11 @@ class QuestionnaireViewModel : ViewModel() {
 
             val result = repository.saveQuestionnaire(questionnaire)
             result.onSuccess {
+                // ✅ AGREGAR ESTO - Marcar TODOS como completado inicial
+                QuestionnaireType.values().forEach { type ->
+                    tracker.onQuestionnaireCompleted(userId, type, isInitial = true)
+                }
+
                 _state.value = QuestionnaireState.Success
             }.onFailure { exception ->
                 _state.value = QuestionnaireState.Error("Error al guardar: ${exception.message}")

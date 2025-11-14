@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 // ViewModel
 class CargaTrabajoViewModel : ViewModel() {
     private val repository = AuthRepository()
+    private val tracker = QuestionnaireTracker(repository) // ✅ AGREGAR
 
     private val _state = MutableStateFlow<QuestionnaireState>(QuestionnaireState.Idle)
     val state: StateFlow<QuestionnaireState> = _state.asStateFlow()
@@ -97,6 +98,10 @@ class CargaTrabajoViewModel : ViewModel() {
 
             val result = repository.saveCargaTrabajoQuestionnaire(questionnaire)
             result.onSuccess {
+                // ✅ AGREGAR:
+                val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@onSuccess
+                tracker.onQuestionnaireCompleted(userId, QuestionnaireType.CARGA_TRABAJO)
+
                 _state.value = QuestionnaireState.Success
             }.onFailure { exception ->
                 _state.value = QuestionnaireState.Error("Error al guardar: ${exception.message}")

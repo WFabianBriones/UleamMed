@@ -11,13 +11,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.ui.tooling.preview.Preview
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +67,10 @@ fun HomeScreen(
                 ExploreContent(onNavigateToQuestionnaire = onNavigateToQuestionnaire)
             }
             composable(Screen.Notifications.route) {
-                NotificationsContent()
+                // ✅ AGREGAR onNavigateToQuestionnaire AQUÍ:
+                NotificationsContent(
+                    onNavigateToQuestionnaire = onNavigateToQuestionnaire
+                )
             }
             composable(Screen.Resources.route) {
                 ResourcesContent()
@@ -116,7 +126,6 @@ fun HomeContent(userName: String) {
             .padding(24.dp),
         horizontalAlignment = Alignment.Start
     ) {
-        // Bienvenida
         Text(
             text = "¡Bienvenido!",
             style = MaterialTheme.typography.headlineMedium,
@@ -133,7 +142,6 @@ fun HomeContent(userName: String) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Tarjetas de información
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -236,7 +244,6 @@ fun ExploreContent(onNavigateToQuestionnaire: (String) -> Unit) {
             modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
         )
 
-        // Lista de cuestionarios
         val questionnaires = listOf(
             QuestionnaireInfo(
                 type = QuestionnaireType.ERGONOMIA,
@@ -308,7 +315,6 @@ fun ExploreContent(onNavigateToQuestionnaire: (String) -> Unit) {
             QuestionnaireCard(
                 info = info,
                 onClick = {
-                    // Navegar según el tipo de cuestionario
                     val route = when (info.type) {
                         QuestionnaireType.ERGONOMIA -> Screen.ErgonomiaQuestionnaire.route
                         QuestionnaireType.SINTOMAS_MUSCULARES -> Screen.SintomasMuscularesQuestionnaire.route
@@ -319,7 +325,6 @@ fun ExploreContent(onNavigateToQuestionnaire: (String) -> Unit) {
                         QuestionnaireType.HABITOS_SUENO -> Screen.HabitosSuenoQuestionnaire.route
                         QuestionnaireType.BALANCE_VIDA_TRABAJO -> Screen.BalanceVidaTrabajoQuestionnaire.route
                         else -> {
-                            // Para los cuestionarios que aún no están implementados
                             android.widget.Toast.makeText(
                                 context,
                                 "Próximamente: ${info.title}",
@@ -356,7 +361,6 @@ fun QuestionnaireCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icono
             Surface(
                 modifier = Modifier.size(56.dp),
                 shape = MaterialTheme.shapes.medium,
@@ -377,7 +381,6 @@ fun QuestionnaireCard(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // Información
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = info.title,
@@ -422,7 +425,6 @@ fun QuestionnaireCard(
                 }
             }
 
-            // Flecha
             Icon(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
@@ -432,12 +434,65 @@ fun QuestionnaireCard(
     }
 }
 
+// ============================================
+// ✅ NUEVA FUNCIÓN NotificationsContent
+// ============================================
+
+// ViewModel de Notificaciones
+class NotificationsViewModel : ViewModel() {
+    private val repository = AuthRepository()
+    private val notificationManager = FollowUpNotificationManager(repository)
+
+    private val _notifications = MutableStateFlow<List<FollowUpNotification>>(emptyList())
+    val notifications: StateFlow<List<FollowUpNotification>> = _notifications.asStateFlow()
+
+    private val _nextScheduled = MutableStateFlow<FollowUpNotification?>(null)
+    val nextScheduled: StateFlow<FollowUpNotification?> = _nextScheduled.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    fun loadNotifications(userId: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val pending = notificationManager.getPendingNotifications(userId)
+                _notifications.value = pending
+
+                val next = notificationManager.getNextScheduledFollowUp(userId)
+                _nextScheduled.value = next
+            } catch (e: Exception) {
+                _notifications.value = emptyList()
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+}
+
 @Composable
-fun NotificationsContent() {
+fun NotificationsContent(
+    onNavigateToQuestionnaire: (String) -> Unit
+) {
+    val viewModel: NotificationsViewModel = viewModel()
+    val notifications by viewModel.notifications.collectAsState()
+    val nextScheduled by viewModel.nextScheduled.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    val authViewModel: AuthViewModel = viewModel()
+    val currentUser by authViewModel.currentUser.collectAsState()
+
+    LaunchedEffect(currentUser) {
+        currentUser?.uid?.let { userId ->
+            viewModel.loadNotifications(userId)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Text(
             text = "Notificaciones",
@@ -446,40 +501,303 @@ fun NotificationsContent() {
             color = MaterialTheme.colorScheme.primary
         )
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Seguimientos de salud ocupacional",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
         Spacer(modifier = Modifier.height(24.dp))
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Notifications,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                CircularProgressIndicator()
+            }
+        } else {
+            nextScheduled?.let { next ->
+                NextScheduledCard(notification = next)
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (notifications.isEmpty()) {
+                EmptyNotificationsState()
+            } else {
                 Text(
-                    text = "No tienes notificaciones",
+                    text = "Seguimientos Pendientes (${notifications.size})",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+
+                val highPriority = notifications.filter { it.priority == NotificationPriority.HIGH }
+                val mediumPriority = notifications.filter { it.priority == NotificationPriority.MEDIUM }
+                val lowPriority = notifications.filter { it.priority == NotificationPriority.LOW }
+
+                if (highPriority.isNotEmpty()) {
+                    PrioritySection(
+                        title = "Urgentes",
+                        notifications = highPriority,
+                        onNavigate = onNavigateToQuestionnaire
+                    )
+                }
+
+                if (mediumPriority.isNotEmpty()) {
+                    PrioritySection(
+                        title = "Importantes",
+                        notifications = mediumPriority,
+                        onNavigate = onNavigateToQuestionnaire
+                    )
+                }
+
+                if (lowPriority.isNotEmpty()) {
+                    PrioritySection(
+                        title = "Disponibles",
+                        notifications = lowPriority,
+                        onNavigate = onNavigateToQuestionnaire
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NextScheduledCard(notification: FollowUpNotification) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Schedule,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(40.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Las notificaciones importantes aparecerán aquí",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "Próximo Seguimiento",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = notification.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = formatDueDate(notification.dueDate),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
         }
+    }
+}
+
+@Composable
+fun EmptyNotificationsState() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Filled.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "¡Todo al día!",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "No tienes seguimientos pendientes en este momento",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun PrioritySection(
+    title: String,
+    notifications: List<FollowUpNotification>,
+    onNavigate: (String) -> Unit
+) {
+    Column {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        notifications.forEach { notification ->
+            NotificationCard(
+                notification = notification,
+                onClick = { onNavigate(notification.route) }
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotificationCard(
+    notification: FollowUpNotification,
+    onClick: () -> Unit
+) {
+    val containerColor = when (notification.priority) {
+        NotificationPriority.HIGH -> MaterialTheme.colorScheme.errorContainer
+        NotificationPriority.MEDIUM -> MaterialTheme.colorScheme.tertiaryContainer
+        NotificationPriority.LOW -> MaterialTheme.colorScheme.surfaceVariant
+    }
+
+    val iconColor = when (notification.priority) {
+        NotificationPriority.HIGH -> MaterialTheme.colorScheme.error
+        NotificationPriority.MEDIUM -> MaterialTheme.colorScheme.tertiary
+        NotificationPriority.LOW -> MaterialTheme.colorScheme.primary
+    }
+
+    val icon = when (notification.priority) {
+        NotificationPriority.HIGH -> Icons.Filled.Warning
+        NotificationPriority.MEDIUM -> Icons.Filled.Schedule
+        NotificationPriority.LOW -> Icons.Filled.Assignment
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = MaterialTheme.shapes.medium,
+                color = iconColor.copy(alpha = 0.2f)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = iconColor.copy(alpha = 0.2f)
+                ) {
+                    Text(
+                        text = "Hace ${notification.daysSinceLastCompletion} días",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = iconColor,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = notification.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = notification.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (notification.isOverdue) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = iconColor
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Seguimiento atrasado",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = iconColor,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+fun formatDueDate(date: java.time.LocalDateTime): String {
+    val now = java.time.LocalDateTime.now()
+    val days = ChronoUnit.DAYS.between(now.toLocalDate(), date.toLocalDate())
+
+    return when {
+        days == 0L -> "Hoy"
+        days == 1L -> "Mañana"
+        days > 1 -> "En $days días"
+        days == -1L -> "Ayer"
+        days < -1 -> "Hace ${-days} días"
+        else -> date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
     }
 }
 

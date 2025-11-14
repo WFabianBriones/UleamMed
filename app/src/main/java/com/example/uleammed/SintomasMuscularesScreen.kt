@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 // ViewModel
 class SintomasMuscularesViewModel : ViewModel() {
     private val repository = AuthRepository()
+    private val tracker = QuestionnaireTracker(repository) // ✅ AGREGA
 
     private val _state = MutableStateFlow<QuestionnaireState>(QuestionnaireState.Idle)
     val state: StateFlow<QuestionnaireState> = _state.asStateFlow()
@@ -116,6 +117,10 @@ class SintomasMuscularesViewModel : ViewModel() {
 
             val result = repository.saveSintomasMuscularesQuestionnaire(questionnaire)
             result.onSuccess {
+                // ✅ AGREGAR:
+                val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@onSuccess
+                tracker.onQuestionnaireCompleted(userId, QuestionnaireType.SINTOMAS_MUSCULARES)
+
                 _state.value = QuestionnaireState.Success
             }.onFailure { exception ->
                 _state.value = QuestionnaireState.Error("Error al guardar: ${exception.message}")

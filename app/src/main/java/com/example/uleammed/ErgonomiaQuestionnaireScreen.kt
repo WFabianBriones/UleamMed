@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 // ViewModel
 class ErgonomiaViewModel : ViewModel() {
     private val repository = AuthRepository()
+    private val tracker = QuestionnaireTracker(repository) // ✅ AGREGAR
 
     private val _state = MutableStateFlow<QuestionnaireState>(QuestionnaireState.Idle)
     val state: StateFlow<QuestionnaireState> = _state.asStateFlow()
@@ -115,6 +116,9 @@ class ErgonomiaViewModel : ViewModel() {
 
             val result = repository.saveErgonomiaQuestionnaire(questionnaire)
             result.onSuccess {
+                // ✅ AGREGAR ESTO:
+                tracker.onQuestionnaireCompleted(userId, QuestionnaireType.ERGONOMIA)
+
                 _state.value = QuestionnaireState.Success
             }.onFailure { exception ->
                 _state.value = QuestionnaireState.Error("Error al guardar: ${exception.message}")
