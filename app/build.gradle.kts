@@ -57,6 +57,12 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
 
+    // Play Services base (necesario para GoogleApiManager y Firebase interno)
+    implementation("com.google.android.gms:play-services-base:18.5.0")
+    implementation("com.google.android.gms:play-services-auth:21.1.0")
+
+
+
     // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
